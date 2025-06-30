@@ -1,0 +1,4 @@
+[core]
+    remote = storage
+['remote "storage"']
+    url = ssh://root@175.121.93.70:55290/workspace/CVPR2024-FACT/data
