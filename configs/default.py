@@ -5,21 +5,25 @@ _C = CN()
 # auxiliary setting
 _C.aux = CN()
 _C.aux.gpu = 1
-_C.aux.mark = "" # for adding addtional note
-_C.aux.runid = 0 # the X-th run of this configuration
+_C.aux.mark = ""  # for adding addtional note
+_C.aux.runid = 0  # the X-th run of this configuration
 _C.aux.debug = False
 _C.aux.wandb_project = "FACT"
 _C.aux.wandb_user = ""
 _C.aux.wandb_offline = False
-_C.aux.resume = "max" # "", ckpt_path, "max" (resume latest ckpt of the experiment)
+_C.aux.resume = "max"  # "", ckpt_path, "max" (resume latest ckpt of the experiment)
 _C.aux.eval_every = 1000
 _C.aux.print_every = 200
 
 # dataset
 _C.dataset = "breakfast"
 _C.split = "split1"
-_C.sr = 1 # temporal down-sample rate
-_C.eval_bg = False # if including background frame in evaluation
+_C.sr = 1  # temporal down-sample rate
+_C.eval_bg = False  # if including background frame in evaluation
+
+_C.features = None
+_C.mapping = None
+_C.bg_class = None
 
 # create dataset config variables to allow flexible dataset loading
 # if configs for <_C.dataset> cannot be found at utils/dataset.py
@@ -46,24 +50,24 @@ _C.clip_grad_norm = 10.0
 # model
 _C.FACT = FACT = CN()
 FACT.ntoken = 30
-FACT.block = "iuUU" # i - input block; u - update block; U - update block with temporal down/up-sample
-FACT.trans = False # if trans is available using training + testing
+FACT.block = "iuUU"  # i - input block; u - update block; U - update block with temporal down/up-sample
+FACT.trans = False  # if trans is available using training + testing
 FACT.fpos = True
-FACT.cmr = 0.3 # channel masking rate
-FACT.mwt = 0.1 # weight for merging predictions from action/frame branch
+FACT.cmr = 0.3  # channel masking rate
+FACT.mwt = 0.1  # weight for merging predictions from action/frame branch
 
 # input block
 _C.Bi = Bi = CN()
 Bi.hid_dim = 512
 Bi.dropout = 0.5
 
-Bi.a = "sca" 
+Bi.a = "sca"
 Bi.a_nhead = 8
 Bi.a_ffdim = 2048
 Bi.a_layers = 6
 Bi.a_dim = 512
 
-Bi.f = 'cnn'
+Bi.f = "cnn"
 Bi.f_layers = 10
 Bi.f_ln = True
 Bi.f_dim = 512
@@ -110,12 +114,14 @@ BU.s_layers = 1
 #########################
 # Loss
 _C.Loss = Loss = CN()
-Loss.pc = 1.0 # match weight for prob
-Loss.a2fc = 1.0 # match weight for a2f_attn overlap
-Loss.match = 'o2o' # one-to-one(o2o) or one-to-many(o2m)
-Loss.bgw = 1.0 # weight for background class
-Loss.nullw = -1.0 # weight for null class in action token; -1 -> auto-compute from statistic
-Loss.sw = 0.0 # weight for smoothing loss
+Loss.pc = 1.0  # match weight for prob
+Loss.a2fc = 1.0  # match weight for a2f_attn overlap
+Loss.match = "o2o"  # one-to-one(o2o) or one-to-many(o2m)
+Loss.bgw = 1.0  # weight for background class
+Loss.nullw = (
+    -1.0
+)  # weight for null class in action token; -1 -> auto-compute from statistic
+Loss.sw = 0.0  # weight for smoothing loss
 
 #########################
 # temporal masking
@@ -126,8 +132,6 @@ TM.p = 0.05
 TM.m = 5
 TM.inplace = True
 
+
 def get_cfg_defaults():
     return _C.clone()
-
-
-

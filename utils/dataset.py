@@ -1,30 +1,34 @@
 #!/usr/bin/python3
 
-import numpy as np
 import os
+
+import numpy as np
 import torch
-from ..home import get_project_base
 from yacs.config import CfgNode
-from .utils import shrink_frame_label
+
+from home import get_project_base
+from utils.utils import shrink_frame_label
 
 BASE = get_project_base()
 
+
 def load_feature(feature_dir, video, transpose):
-    file_name = os.path.join(feature_dir, video+'.npy')
+    file_name = os.path.join(feature_dir, video + ".npy")
     feature = np.load(file_name)
 
     if transpose:
         feature = feature.T
     if feature.dtype != np.float32:
         feature = feature.astype(np.float32)
-    
-    return feature #[::sample_rate]
+
+    return feature  # [::sample_rate]
+
 
 def load_action_mapping(map_fname, sep=" "):
     label2index = dict()
     index2label = dict()
-    with open(map_fname, 'r') as f:
-        content = f.read().split('\n')[0:-1]
+    with open(map_fname, "r") as f:
+        content = f.read().split("\n")[0:-1]
         for line in content:
             tokens = line.split(sep)
             l = sep.join(tokens[1:])
@@ -34,6 +38,7 @@ def load_action_mapping(map_fname, sep=" "):
 
     return label2index, index2label
 
+
 class Dataset(object):
     """
     self.features[video]: the feature array of the given video (frames x dimension)
@@ -42,8 +47,7 @@ class Dataset(object):
     """
 
     def __init__(self, video_list, nclasses, load_video_func, bg_class):
-        """
-        """
+        """ """
 
         self.video_list = video_list
         self.load_video = load_video_func
@@ -53,13 +57,13 @@ class Dataset(object):
         self.bg_class = bg_class
         self.data = {}
         self.data[video_list[0]] = load_video_func(video_list[0])
-        self.input_dimension = self.data[video_list[0]][0].shape[1] 
-    
+        self.input_dimension = self.data[video_list[0]][0].shape[1]
+
     def __str__(self):
         string = "< Dataset %d videos, %d feat-size, %d classes >"
         string = string % (len(self.video_list), self.input_dimension, self.nclasses)
         return string
-    
+
     def __repr__(self):
         return str(self)
 
@@ -79,7 +83,7 @@ class Dataset(object):
         return len(self.video_list)
 
 
-class DataLoader():
+class DataLoader:
 
     def __init__(self, dataset: Dataset, batch_size, shuffle=False):
 
@@ -89,7 +93,7 @@ class DataLoader():
         self.shuffle = shuffle
         self.batch_size = batch_size
 
-        self.num_batch = int(np.ceil(self.num_video/self.batch_size))
+        self.num_batch = int(np.ceil(self.num_video / self.batch_size))
 
         self.selector = list(range(self.num_video))
         self.index = 0
@@ -112,9 +116,11 @@ class DataLoader():
             raise StopIteration
 
         else:
-            video_idx = self.selector[self.index : self.index+self.batch_size]
+            video_idx = self.selector[self.index : self.index + self.batch_size]
             if len(video_idx) < self.batch_size:
-                video_idx = video_idx + self.selector[:self.batch_size-len(video_idx)]
+                video_idx = (
+                    video_idx + self.selector[: self.batch_size - len(video_idx)]
+                )
             videos = [self.videos[i] for i in video_idx]
             self.index += self.batch_size
 
@@ -127,77 +133,85 @@ class DataLoader():
                 batch_train_label.append(torch.LongTensor(train_label))
                 batch_eval_label.append(eval_label)
 
-
             return videos, batch_sequence, batch_train_label, batch_eval_label
 
 
-#------------------------------------------------------------------
-#------------------------------------------------------------------
+# ------------------------------------------------------------------
+# ------------------------------------------------------------------
+
 
 def create_dataset(cfg: CfgNode):
 
     if cfg.dataset == "breakfast":
-        map_fname = BASE + 'data/breakfast/mapping.txt'
-        dataset_path = BASE + 'data/breakfast/'
-        train_split_fname = BASE + f'data/breakfast/splits/train.{cfg.split}.bundle'
-        test_split_fname = BASE + f'data/breakfast/splits/test.{cfg.split}.bundle'
-        feature_path = BASE + 'data/breakfast/features'
+        map_fname = BASE + "data/breakfast/mapping.txt"
+        dataset_path = BASE + "data/breakfast/"
+        train_split_fname = BASE + f"data/breakfast/splits/train.{cfg.split}.bundle"
+        test_split_fname = BASE + f"data/breakfast/splits/test.{cfg.split}.bundle"
+        feature_path = BASE + "data/breakfast/features"
         feature_transpose = True
-        if cfg.Loss.match == 'o2o':
-            average_transcript_len = 6.9 
-        bg_class = [0] 
-        groundTruth_path = os.path.join(dataset_path, 'groundTruth')
+        if cfg.Loss.match == "o2o":
+            average_transcript_len = 6.9
+        bg_class = [0]
+        groundTruth_path = os.path.join(dataset_path, "groundTruth")
 
     elif cfg.dataset == "gtea":
-        map_fname = BASE + 'data/gtea/mapping.txt'
-        dataset_path = BASE + 'data/gtea/'
-        feature_path = BASE + 'data/gtea/features/'
-        train_split_fname = BASE + f'data/gtea/splits/train.{cfg.split}.bundle'
-        test_split_fname = BASE + f'data/gtea/splits/test.{cfg.split}.bundle'
+        map_fname = BASE + "data/gtea/mapping.txt"
+        dataset_path = BASE + "data/gtea/"
+        feature_path = BASE + "data/gtea/features/"
+        train_split_fname = BASE + f"data/gtea/splits/train.{cfg.split}.bundle"
+        test_split_fname = BASE + f"data/gtea/splits/test.{cfg.split}.bundle"
         feature_transpose = True
-        if cfg.Loss.match == 'o2o':
+        if cfg.Loss.match == "o2o":
             average_transcript_len = 32.9
         bg_class = [10]
-        groundTruth_path = os.path.join(dataset_path, 'groundTruth')
+        groundTruth_path = os.path.join(dataset_path, "groundTruth")
 
     elif cfg.dataset == "ego":
-        map_fname = BASE + 'data/egoprocel/mapping.txt'
-        dataset_path = BASE + 'data/egoprocel/'
-        feature_path = BASE + 'data/egoprocel/features/'
-        train_split_fname = BASE + 'data/egoprocel/%s.train' % cfg.split
-        test_split_fname = BASE + 'data/egoprocel/%s.test' % cfg.split
+        map_fname = BASE + "data/egoprocel/mapping.txt"
+        dataset_path = BASE + "data/egoprocel/"
+        feature_path = BASE + "data/egoprocel/features/"
+        train_split_fname = BASE + "data/egoprocel/%s.train" % cfg.split
+        test_split_fname = BASE + "data/egoprocel/%s.test" % cfg.split
         feature_transpose = False
         bg_class = [0]
-        if cfg.Loss.match == 'o2o':
+        if cfg.Loss.match == "o2o":
             average_transcript_len = 21.5
-        else: # for one-to-many matching
+        else:  # for one-to-many matching
             average_transcript_len = 7.4
-        groundTruth_path = os.path.join(dataset_path, 'groundTruth')
+        groundTruth_path = os.path.join(dataset_path, "groundTruth")
 
     elif cfg.dataset == "epic":
-        map_fname = BASE + 'data/epic-kitchens/processed/mapping.txt'
-        dataset_path = BASE + 'data/epic-kitchens/processed/'
+        map_fname = BASE + "data/epic-kitchens/processed/mapping.txt"
+        dataset_path = BASE + "data/epic-kitchens/processed/"
         bg_class = [0]
-        feature_path = BASE + 'data/epic-kitchens/processed/features'
-        train_split_fname = BASE + 'data/epic-kitchens/processed/%s.train' % cfg.split
-        test_split_fname = BASE + 'data/epic-kitchens/processed/%s.test' % cfg.split
+        feature_path = BASE + "data/epic-kitchens/processed/features"
+        train_split_fname = BASE + "data/epic-kitchens/processed/%s.train" % cfg.split
+        test_split_fname = BASE + "data/epic-kitchens/processed/%s.test" % cfg.split
         feature_transpose = False
-        if cfg.Loss.match == 'o2o':
+        if cfg.Loss.match == "o2o":
             average_transcript_len = 165
-        else: # for one-to-many matching
+        else:  # for one-to-many matching
             average_transcript_len = 52
-        groundTruth_path = os.path.join(dataset_path, 'groundTruth')
 
-    else: # if dataset data is not defined here, try reading from the config file
-        map_fname = cfg.map_fname
-        feature_path = cfg.feature_path
-        groundTruth_path = cfg.groundTruth_path
-        train_split_fname = os.path.join(cfg.split_path, f'train.{cfg.split}.bundle')
-        test_split_fname = os.path.join(cfg.split_path, f'test.{cfg.split}.bundle')
-        feature_transpose = cfg.feature_transpose
-        bg_class = cfg.bg_class if isinstance(cfg.bg_class, list) else [cfg.bg_class]
-        average_transcript_len = cfg.average_transcript_len
-    
+    elif cfg.dataset == "fs_tas":
+        map_fname = BASE + "data/fs_tas/mapping/" + cfg.mapping
+        dataset_path = BASE + "data/fs_tas/"
+        bg_class = cfg.bg_class
+        feature_path = BASE + "data/fs_tas/features/" + cfg.features
+        train_split_fname = BASE + "data/fs_tas/splits/" + f"train.{cfg.split}.bundle"
+        test_split_fname = BASE + "data/fs_tas/splits/" + f"test.{cfg.split}.bundle"
+        feature_transpose = False
+
+        if cfg.Loss.match == "o2o":
+            average_transcript_len = 14.89
+        else:
+            average_transcript_len = 9.33
+
+    if cfg.dataset == "fs_tas":
+        mapping = cfg.mapping.split(".")[0].split("_")[-1]
+        groundTruth_path = os.path.join(dataset_path, "groundTruth", f"gt_{mapping}")
+    else:
+        groundTruth_path = os.path.join(dataset_path, "groundTruth")
 
     ################################################
     ################################################
@@ -213,14 +227,14 @@ def create_dataset(cfg: CfgNode):
         Output:
             feature, label_for_training, label_for_evaluation
     """
+
     def load_video(vname):
-        if vname.endswith('.txt'):
-            vname = vname[:-4]
-        feature = load_feature(feature_path, vname, feature_transpose) # should be T x D or T x D x H x W
+        feature = load_feature(
+            feature_path, vname.split(".")[0], feature_transpose
+        )  # should be T x D or T x D x H x W
 
-        with open(os.path.join(groundTruth_path, vname + '.txt')) as f:
-            gt_label = [ label2index[line] for line in f.read().split('\n')[:-1] ]
-
+        with open(os.path.join(groundTruth_path, vname)) as f:
+            gt_label = [label2index[line] for line in f.read().split("\n")[:-1]]
 
         if feature.shape[0] != len(gt_label):
             l = min(feature.shape[0], len(gt_label))
@@ -237,25 +251,24 @@ def create_dataset(cfg: CfgNode):
 
         return feature, gt_label_sampled, gt_label
 
-    
     ################################################
     ################################################
-    
-    with open(test_split_fname, 'r') as f:
-        test_video_list = f.read().split('\n')[0:-1]
-    if cfg.dataset in ['breakfast', '50salads', 'gtea']: 
-        test_video_list = [ v[:-4] for v in test_video_list ] 
+
+    with open(test_split_fname, "r") as f:
+        test_video_list = f.read().split("\n")[0:-1]
+    if cfg.dataset in ["breakfast", "50salads", "gtea"]:
+        test_video_list = [v[:-4] for v in test_video_list]
     test_dataset = Dataset(test_video_list, nclasses, load_video, bg_class)
 
     if cfg.aux.debug:
         dataset = test_dataset
     else:
-        with open(train_split_fname, 'r') as f:
-            video_list = f.read().split('\n')[0:-1]
-        if cfg.dataset in ['breakfast', '50salads', 'gtea']: 
-            video_list = [ v[:-4] for v in video_list ] 
+        with open(train_split_fname, "r") as f:
+            video_list = f.read().split("\n")[0:-1]
+        if cfg.dataset in ["breakfast", "50salads", "gtea"]:
+            video_list = [v[:-4] for v in video_list]
         dataset = Dataset(video_list, nclasses, load_video, bg_class)
-        
+
     dataset.average_transcript_len = average_transcript_len
     dataset.label2index = label2index
     dataset.index2label = index2label

@@ -7,3 +7,7 @@ test.py
 .vscode/settings.json
 ipynb
 old
+data/
+.vscode/
+__pycache__/
+log/

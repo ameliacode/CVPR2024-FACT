@@ -1,9 +1,11 @@
+import numpy as np
 import torch
 import torch.nn.functional as F
 from scipy.optimize import linear_sum_assignment
-from . import basic as basic
-from ..utils import utils
-import numpy as np
+
+from models import basic as basic
+from utils import utils
+
 
 def smooth_loss(logit, is_logit=True):
     """
@@ -13,9 +15,10 @@ def smooth_loss(logit, is_logit=True):
         logsoft = F.log_softmax(logit, dim=2)
     else:
         logsoft = logit
-    loss = torch.clamp((logsoft[:, 1:] - logsoft[:, :-1])**2, min=0, max=16)
+    loss = torch.clamp((logsoft[:, 1:] - logsoft[:, :-1]) ** 2, min=0, max=16)
     loss = loss.mean()
     return loss
+
 
 def torch_class_label_to_segment_label(label):
     segment_label = torch.zeros_like(label)
@@ -32,37 +35,40 @@ def torch_class_label_to_segment_label(label):
         segment_label[i] = aid
 
     transcript = torch.LongTensor(transcript).to(label.device)
-    
+
     return transcript, segment_label
 
+
 def logit2prob(clogit, dim=-1, class_sep=None):
-    if class_sep is None or class_sep<=0:
+    if class_sep is None or class_sep <= 0:
         cprob = torch.softmax(clogit, dim=dim)
     else:
-        assert dim==-1, dim
+        assert dim == -1, dim
         cprob1 = torch.softmax(clogit[..., :class_sep], dim=dim)
         cprob2 = torch.softmax(clogit[..., class_sep:], dim=dim)
         cprob = torch.cat([cprob1, cprob2], dim=dim)
-    
+
     return cprob
 
-class MatchCriterion():
+
+class MatchCriterion:
 
     def __init__(self, cfg, nclasses, bg_ids=[], class_weight=None):
         self.cfg = cfg
         self.nclasses = nclasses
         self.bg_ids = bg_ids
-        self._class_weight=class_weight
-
+        self._class_weight = class_weight
 
     def set_label(self, label):
         self.class_label = label
         self.transcript, self.seg_label = torch_class_label_to_segment_label(label)
         self.onehot_class_label = self._label_to_onehot(self.class_label, self.nclasses)
-        self.onehot_seg_label = self._label_to_onehot(self.seg_label, len(self.transcript))
+        self.onehot_seg_label = self._label_to_onehot(
+            self.seg_label, len(self.transcript)
+        )
 
         # create class weight
-        cweight = torch.ones(self.nclasses+1).to(label.device)
+        cweight = torch.ones(self.nclasses + 1).to(label.device)
         cweight[-1] = self.cfg.Loss.nullw
         if self._class_weight is not None:
             for i in range(self.nclasses):
@@ -78,10 +84,10 @@ class MatchCriterion():
                 sweight[i] = self._class_weight[t]
         else:
             for i in self.bg_ids:
-                sweight[self.transcript==i] = self.cfg.Loss.bgw
+                sweight[self.transcript == i] = self.cfg.Loss.bgw
 
-        self.cweight=cweight
-        self.sweight=sweight
+        self.cweight = cweight
+        self.sweight = sweight
 
     def _label_to_onehot(self, label, nclass):
         onehot_label = torch.zeros(len(label), nclass).to(label.device)
@@ -94,12 +100,12 @@ class MatchCriterion():
         a2f_attn: 1, f, a, sum over a == 1
         onehot_seg_label: f, s
         """
-        a2f_attn = a2f_attn[0].unsqueeze(-1) # 1, f, a -> f, a, 1
-        onehot_seg_label = onehot_seg_label.unsqueeze(1) # f, s -> f, 1, s
+        a2f_attn = a2f_attn[0].unsqueeze(-1)  # 1, f, a -> f, a, 1
+        onehot_seg_label = onehot_seg_label.unsqueeze(1)  # f, s -> f, 1, s
         a2f_attn_np = utils.to_numpy(a2f_attn)
         onehot_seg_label_np = utils.to_numpy(onehot_seg_label)
-        overlap = np.einsum('tax,txs->as', a2f_attn_np, onehot_seg_label_np)
-        union = np.minimum(a2f_attn_np + onehot_seg_label_np, 1.0).sum(0) # a,s 
+        overlap = np.einsum("tax,txs->as", a2f_attn_np, onehot_seg_label_np)
+        union = np.minimum(a2f_attn_np + onehot_seg_label_np, 1.0).sum(0)  # a,s
         iou = np.nan_to_num(overlap / union, nan=0.0)
 
         del a2f_attn_np, onehot_seg_label_np
@@ -107,48 +113,52 @@ class MatchCriterion():
 
     def match(self, clogit, a2f_attn):
         """
-        clogit: a, 1, c  
+        clogit: a, 1, c
         f2a_attn: 1, a, f
         a2f_attn: 1, f, a
         """
-        assert clogit.shape[1] == 1 # batch_size == 1
+        assert clogit.shape[1] == 1  # batch_size == 1
 
         match_cfg = self.cfg.Loss
         transcript = self.transcript
         onehot_seg_label = self.onehot_seg_label
 
         # sequential matching between tokens and groundtruth segments
-        if match_cfg.match == 'seq':
+        if match_cfg.match == "seq":
             A = clogit.shape[0]
             S = onehot_seg_label.shape[-1]
             assert A >= S, (A, S)
             action_ind = seg_ind = torch.as_tensor(list(range(S)), dtype=torch.int64)
             return action_ind, seg_ind
 
-        # compute matching cost 
+        # compute matching cost
         cost = 0
         with torch.no_grad():
             if match_cfg.pc > 0:
                 prob = clogit.squeeze(1)
-                prob = torch.index_select(prob, 1, transcript) # a, s
+                prob = torch.index_select(prob, 1, transcript)  # a, s
                 prob = utils.to_numpy(prob)
                 cost -= match_cfg.pc * prob
-            
+
             if match_cfg.a2fc > 0:
                 a2f_iou = self.a2f_soft_iou(a2f_attn, onehot_seg_label)
                 a2f_iou = utils.to_numpy(a2f_iou)
                 cost -= match_cfg.a2fc * a2f_iou
 
-        cost = utils.to_numpy(cost) # a, s
+        cost = utils.to_numpy(cost)  # a, s
 
         # find optimal matching
-        if match_cfg.match == 'o2o': # one-to-one matching
+        if match_cfg.match == "o2o":  # one-to-one matching
             action_ind, seg_ind = linear_sum_assignment(cost)
-        elif match_cfg.match == 'o2m': # one-to-many matching
+        elif match_cfg.match == "o2m":  # one-to-many matching
             action_ind, seg_ind = self._one_to_many_match(cost)
 
-        action_ind = torch.as_tensor(action_ind, dtype=torch.int64) # id of action query token
-        seg_ind    = torch.as_tensor(seg_ind, dtype=torch.int64) # groundtruth action label id
+        action_ind = torch.as_tensor(
+            action_ind, dtype=torch.int64
+        )  # id of action query token
+        seg_ind = torch.as_tensor(
+            seg_ind, dtype=torch.int64
+        )  # groundtruth action label id
 
         return action_ind, seg_ind
 
@@ -157,19 +167,19 @@ class MatchCriterion():
         actions = np.unique(transcript_np)
         token2action_cost = []
         for a in actions:
-            where = (transcript_np == a)
+            where = transcript_np == a
             score = cost[:, where]
             score = score.sum(1)
             token2action_cost.append(score)
         token2action_cost = np.stack(token2action_cost, axis=1)
 
         _aid, _cid = linear_sum_assignment(token2action_cost)
-        
-        unassign_aid = [ a for a in range(cost.shape[0]) if a not in _aid ] 
+
+        unassign_aid = [a for a in range(cost.shape[0]) if a not in _aid]
         unassign_cid = token2action_cost[unassign_aid].argmin(1)
 
         all_aid = np.array(_aid.tolist() + unassign_aid)
-        all_cid = [ actions[i] for i in _cid.tolist() + unassign_cid.tolist() ]
+        all_cid = [actions[i] for i in _cid.tolist() + unassign_cid.tolist()]
         all_cid = np.array(all_cid)
 
         atoken_cid = np.zeros(cost.shape[0])
@@ -184,12 +194,12 @@ class MatchCriterion():
 
             for s, a in zip(seg_where, assign):
                 match[s] = token_where[a]
-                
+
         aid_new, sid_new = [], []
         for k, v in match.items():
             aid_new.append(v)
             sid_new.append(k)
-        
+
         return aid_new, sid_new
 
     def action_token_loss(self, match, action_clogit, is_logit=True):
@@ -197,10 +207,14 @@ class MatchCriterion():
         A, C = action_clogit.shape[0], action_clogit.shape[-1]
 
         # action prediction loss
-        clabel = torch.zeros(A).to(action_clogit.device).long() + C - 1 # shape: a; default = empty_class
+        clabel = (
+            torch.zeros(A).to(action_clogit.device).long() + C - 1
+        )  # shape: a; default = empty_class
         clabel[aind] = self.transcript[sind]
         if is_logit:
-            loss = F.cross_entropy(action_clogit.squeeze(1), clabel, weight=self.cweight)
+            loss = F.cross_entropy(
+                action_clogit.squeeze(1), clabel, weight=self.cweight
+            )
         else:
             loss = F.nll_loss(action_clogit.squeeze(1), clabel, weight=self.cweight)
 
@@ -211,31 +225,35 @@ class MatchCriterion():
         onehot_seg_label = self.onehot_seg_label
         aind, sind = match
 
-        frame_tgt = onehot_seg_label[:, sind] # f, s
-        attn = attn[0, :, aind] # f, s
-        attn_logp = torch.log_softmax(attn, dim=dim-1)
-        loss2 = - attn_logp * frame_tgt 
+        frame_tgt = onehot_seg_label[:, sind]  # f, s
+        attn = attn[0, :, aind]  # f, s
+        attn_logp = torch.log_softmax(attn, dim=dim - 1)
+        loss2 = -attn_logp * frame_tgt
         if self.sweight is not None:
             loss2 = loss2 * self.sweight
         loss2 = loss2.sum(1).sum() / self.onehot_seg_label.sum()
 
         return loss2
 
-    def cross_attn_loss_tdu(self, match, attn, tdu: basic.TemporalDownsampleUpsample, dim=None):
+    def cross_attn_loss_tdu(
+        self, match, attn, tdu: basic.TemporalDownsampleUpsample, dim=None
+    ):
         assert dim >= 1
         onehot_seg_label = self.onehot_seg_label
         aind, sind = match
 
         # f, c -> s, c
-        zoomed_label = torch.zeros([tdu.num_seg, onehot_seg_label.shape[1]], dtype=onehot_seg_label.dtype).to(onehot_seg_label.device) 
+        zoomed_label = torch.zeros(
+            [tdu.num_seg, onehot_seg_label.shape[1]], dtype=onehot_seg_label.dtype
+        ).to(onehot_seg_label.device)
         zoomed_label.index_add_(0, tdu.seg_label, onehot_seg_label)
         zoomed_label = zoomed_label / tdu.seg_lens[:, None]
 
-        frame_tgt = zoomed_label[:, sind] # s, n
-        attn = attn[0, :, aind] # s, n
-        attn_logp = torch.log_softmax(attn, dim=dim-1)
+        frame_tgt = zoomed_label[:, sind]  # s, n
+        attn = attn[0, :, aind]  # s, n
+        attn_logp = torch.log_softmax(attn, dim=dim - 1)
 
-        loss2 = - attn_logp * frame_tgt 
+        loss2 = -attn_logp * frame_tgt
         if self.sweight is not None:
             loss2 = loss2 * self.sweight
 
@@ -249,8 +267,10 @@ class MatchCriterion():
         else:
             logp = frame_clogit
 
-        cweight = self.cweight[:frame_clogit.shape[-1]] # remove the weight for null class
-        frame_loss = - logp * self.onehot_class_label
+        cweight = self.cweight[
+            : frame_clogit.shape[-1]
+        ]  # remove the weight for null class
+        frame_loss = -logp * self.onehot_class_label
         frame_loss = frame_loss * cweight
 
         frame_loss = frame_loss.sum(-1).sum() / self.onehot_class_label.sum()
@@ -263,16 +283,16 @@ class MatchCriterion():
         else:
             logp = seg_clogit.squeeze(1)
 
-
         ohl = self.onehot_class_label
-        zoomed_label = torch.zeros([tdu.num_seg, ohl.shape[1]], dtype=ohl.dtype).to(ohl.device) 
+        zoomed_label = torch.zeros([tdu.num_seg, ohl.shape[1]], dtype=ohl.dtype).to(
+            ohl.device
+        )
         zoomed_label.index_add_(0, tdu.seg_label, ohl)
         zoomed_label = zoomed_label / tdu.seg_lens[:, None]
-        seg_loss = ( - logp * zoomed_label )
-        _cweight = self.cweight[:logp.shape[-1]] # remove the weight for null class
-        seg_loss = (seg_loss * _cweight)
+        seg_loss = -logp * zoomed_label
+        _cweight = self.cweight[: logp.shape[-1]]  # remove the weight for null class
+        seg_loss = seg_loss * _cweight
 
         seg_loss = seg_loss.sum(-1).sum() / zoomed_label.sum()
 
         return seg_loss
-    
