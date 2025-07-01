@@ -23,7 +23,6 @@ _C.eval_bg = False  # if including background frame in evaluation
 
 _C.features = None
 _C.mapping = None
-_C.bg_class = None
 
 # create dataset config variables to allow flexible dataset loading
 # if configs for <_C.dataset> cannot be found at utils/dataset.py
@@ -33,7 +32,7 @@ _C.groundTruth_path = None
 _C.map_fname = None
 _C.split_path = None
 _C.feature_transpose = False # if the feature is T x D or D x T
-_C.bg_class = 0 # background class
+_C.bg_class = [] # background class
 _C.average_transcript_len = 0.0 # average number of segments in
 
 # training
