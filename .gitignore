@@ -11,4 +11,4 @@ data/
 .vscode/
 __pycache__/
 log/
-/data
+ckpts/
