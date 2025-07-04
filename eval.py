@@ -37,15 +37,22 @@ for dataset_name, n_splits in [
         model.load_state_dict(weights, strict=False)
         model.eval().cuda()
 
-        ckpt = Checkpoint(-1, bg_class=([] if cfg.eval_bg else dataset.bg_class))
-        loader = DataLoader(test_dataset, 1, shuffle=False)
-        for vname, batch_seq, train_label_list, eval_label in tqdm(loader):
-            seq_list = [s.cuda() for s in batch_seq]
-            train_label_list = [s.cuda() for s in train_label_list]
-            video_saves = model(seq_list, train_label_list)
-            save_results(ckpt, vname, eval_label, video_saves)
+    ckpt = Checkpoint(-1, bg_class=([] if cfg.eval_bg else dataset.bg_class))
+    loader = DataLoader(test_dataset, 1, shuffle=False)
+    for vname, batch_seq, train_label_list, eval_label in tqdm(loader):
+        print(np.array(batch_seq).shape, np.array(train_label_list).shape)
+        shape = np.array(train_label_list).shape
+        seq_list = [s.cuda() for s in batch_seq]
+        train_label_list = [s.cuda() for s in train_label_list]
+        print(seq_list[0].size(), train_label_list[0].size())
+        video_saves = model(
+            seq_list,
+            [torch.tensor([0 for _ in range(shape[-1])], device="cuda:0")],
+        )
+        print(video_saves)
+        # save_results(ckpt, vname, eval_label, video_saves)
 
-        ckpt.compute_metrics()
-        ckpts.append(ckpt)
+    # ckpt.compute_metrics()
+    # ckpts.append(ckpt)
 
-    print(utils.easy_reduce([c.metrics for c in ckpts]))
+# print(utils.easy_reduce([c.metrics for c in ckpts]))
