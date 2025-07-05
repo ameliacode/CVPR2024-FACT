@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from tqdm import tqdm
 
@@ -7,52 +8,39 @@ from utils.dataset import DataLoader, create_dataset
 from utils.evaluate import Checkpoint, Video
 from utils.train_tools import save_results
 
-for dataset_name, n_splits in [
-    ["gtea", 4],
-    ["breakfast", 4],
-    ["egoprocel", 1],
-    ["epic-kitchens", 1],
-]:
-    print(dataset_name)
-    cfg = get_cfg_defaults()
-    cfg.merge_from_file(f"./src/configs/{dataset_name}.yaml")
+n_splits = 1
 
-    ckpts = []
-    for split in range(1, n_splits + 1):
-        cfg.split = f"split{split}"
-        dataset, test_dataset = create_dataset(cfg)
+cfg = get_cfg_defaults()
+cfg.merge_from_file(f"./configs/config.yaml")
 
-        if dataset_name == "epic-kitchens":
-            from .models.blocks_SepVerbNoun import FACT
+ckpts = []
+for split in range(1, n_splits + 1):
+    cfg.split = f"split{split}"
+    dataset, test_dataset = create_dataset(cfg)
 
-            model = FACT(cfg, dataset.input_dimension)
-        else:
-            from .models.blocks import FACT
+    from models.blocks import FACT
 
-            model = FACT(cfg, dataset.input_dimension, dataset.nclasses)
-        weights = f"./ckpts/{dataset_name}/split{split}-weight.pth"
-        weights = torch.load(weights, map_location="cpu")
-        if "frame_pe.pe" in weights:
-            del weights["frame_pe.pe"]
-        model.load_state_dict(weights, strict=False)
-        model.eval().cuda()
+    model = FACT(cfg, dataset.input_dimension, dataset.nclasses)
+    weights = f"./ckpts/best_ckpt.pth"
+    weights = torch.load(weights, map_location="cpu")
+    if "frame_pe.pe" in weights:
+        del weights["frame_pe.pe"]
+    model.load_state_dict(weights, strict=False)
+    model.eval().cuda()
 
-    ckpt = Checkpoint(-1, bg_class=([] if cfg.eval_bg else dataset.bg_class))
-    loader = DataLoader(test_dataset, 1, shuffle=False)
-    for vname, batch_seq, train_label_list, eval_label in tqdm(loader):
-        print(np.array(batch_seq).shape, np.array(train_label_list).shape)
-        shape = np.array(train_label_list).shape
-        seq_list = [s.cuda() for s in batch_seq]
-        train_label_list = [s.cuda() for s in train_label_list]
-        print(seq_list[0].size(), train_label_list[0].size())
-        video_saves = model(
-            seq_list,
-            [torch.tensor([0 for _ in range(shape[-1])], device="cuda:0")],
-        )
-        print(video_saves)
-        # save_results(ckpt, vname, eval_label, video_saves)
+ckpt = Checkpoint(-1, bg_class=([] if cfg.eval_bg else dataset.bg_class))
+loader = DataLoader(test_dataset, 1, shuffle=False)
+for vname, batch_seq, train_label_list, eval_label in tqdm(loader):
+    shape = np.array(train_label_list).shape
+    seq_list = [s.cuda() for s in batch_seq]
+    train_label_list = [s.cuda() for s in train_label_list]
+    video_saves = model(
+        seq_list,
+        [torch.tensor([0 for _ in range(shape[-1])], device="cuda:0")],
+    )
+    save_results(ckpt, vname, eval_label, video_saves)
 
-    # ckpt.compute_metrics()
-    # ckpts.append(ckpt)
+ckpt.compute_metrics()
+ckpts.append(ckpt)
 
-# print(utils.easy_reduce([c.metrics for c in ckpts]))
+print(utils.easy_reduce([c.metrics for c in ckpts]))

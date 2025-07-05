@@ -70,7 +70,7 @@ batch_size: 10
 clip_grad_norm: 10.0
 dataset: fs_tas
 features: pose3d
-mapping: mapping_set.txt  # mapping_set.txt or mapping_element.txt
+mapping: mapping_element.txt  # mapping_set.txt or mapping_element.txt
 bg_class: [] # background class
 eval_bg: false
 epoch: 400

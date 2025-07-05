@@ -1,8 +1,5 @@
-import os
-
 import numpy as np
 import torch
-from torch.nn.functional import softmax
 
 from configs.utils import setup_cfg
 from models.blocks import FACT
